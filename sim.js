@@ -3,10 +3,10 @@ const W = 900, H = 360, TOP = 46, BOT = 330;
 const N = 56;
 const P = {
   manBase: 0.8, crowdK: 0.05, crowdCap: 15, boreUp: 0.16, boreDown: 0.03,
-  manRange: 230, shoutAmp: 2.8, shoutRange: 210, shoutLife: 2.6, heardK: 0.6,
+  manRange: 230, shoutAmp: 2.8, shoutRange: 120, copShoutRange: 320, shoutLife: 2.6, heardK: 0.6,
   cartAmp: 1.0, copCart: 0.3, cartRange: 380, cartLife: 6, wander: 0.27,
   copMan: 0.8, copRange: 420, copHeardK: 0.5,
-  ringR: 52, copAwayR: 95, thinNeed: 2.0, thinMax: 2,
+  ringR: 52, copAwayR: 120, thinNeed: 2.0, thinMax: 2,
   speed: 62, wanderSpeed: 34, manSpeed: 38, youSpeed: 120,
   breathRegen: 0.24, copLock: 3, forget: 20, dayLen: 180,
 };
@@ -32,7 +32,7 @@ class World {
     const r = this.r;
     return { id: this.idc++, x, y: TOP + 8 + r() * (BOT - TOP - 16), vx: 0, vy: 0,
       dir: r() < 0.5 ? -1 : 1, bMan: r() * 0.5, heard: 0, heardIds: {}, tgt: null,
-      think: r() * 0.5, seen: {} };
+      think: r() * 0.5, seen: {}, boreK: 0.4 + r() * 1.2 };
   }
   shout() {
     const y = this.you;
@@ -47,7 +47,7 @@ class World {
     s.push({ kind: 'man', id: -1, x: this.man.x, y: this.man.y, amp: 1 });
     for (const sh of this.shouts) {
       const a = Math.exp(-(this.t - sh.t0) / P.shoutLife);
-      s.push({ kind: 'shout', id: sh.id, x: this.you.x, y: this.you.y, amp: a });
+      s.push({ kind: 'shout', id: sh.id, x: sh.x, y: sh.y, amp: a });
     }
     for (const c of this.carts) {
       const a = Math.exp(-(this.t - c.t0) / P.cartLife);
@@ -63,9 +63,10 @@ class World {
       return P.manBase * crowd * Math.exp(-p.bMan) * Math.exp(-d / P.manRange);
     }
     if (src.kind === 'shout') {
+      if (p.isCop && p.handled && p.handled[src.id]) return 0;
       const k = p.isCop ? P.copHeardK : P.heardK;
       const h = p.heardIds[src.id] ? p.heard - 1 : p.heard;
-      return P.shoutAmp * src.amp * Math.pow(k, h) * Math.exp(-d / P.shoutRange);
+      return P.shoutAmp * src.amp * Math.pow(k, h) * Math.exp(-d / (p.isCop ? P.copShoutRange : P.shoutRange));
     }
     if (src.kind === 'cart') {
       const seen = p.seen[src.id] || 0;
@@ -87,7 +88,7 @@ class World {
   tgtPos(p) {
     if (!p.tgt) return null;
     if (p.tgt.kind === 'man') return [this.man.x, this.man.y, p.isCop ? 16 : 30];
-    if (p.tgt.kind === 'shout') { const s = this.shouts.find(z => z.id === p.tgt.id); if (s || (p.isCop && p.lockUntil > this.t)) return [this.you.x, this.you.y, 24]; return null; }
+    if (p.tgt.kind === 'shout') { const s = this.shouts.find(z => z.id === p.tgt.id); if (p.isCop && (s || p.lockUntil > this.t)) return [this.you.x, this.you.y, 24]; return s ? [s.x, s.y, 24] : null; }
     if (p.tgt.kind === 'cart') { const c = this.carts.find(z => z.id === p.tgt.id); return c ? [c.x, c.y, 30] : null; }
     return null;
   }
@@ -118,7 +119,7 @@ class World {
       if (p.heard > 0) p.heard = Math.max(0, p.heard - dt / P.forget);
       const dm = Math.hypot(p.x - this.man.x, p.y - this.man.y);
       if (!p.isCop) {
-        if (dm < P.ringR + 10 && p.tgt && p.tgt.kind === 'man') p.bMan += P.boreUp * dt;
+        if (dm < P.ringR + 10 && p.tgt && p.tgt.kind === 'man') p.bMan += P.boreUp * p.boreK * dt;
         else p.bMan = Math.max(0, p.bMan - P.boreDown * dt);
       }
       if (p.tgt && p.tgt.kind === 'cart') {
@@ -127,6 +128,10 @@ class World {
       }
       if (p.isCop && p.tgt && p.tgt.kind === 'shout' && !(p.lockUntil > this.t) && Math.hypot(p.x - y.x, p.y - y.y) < 34) {
         p.lockUntil = this.t + P.copLock; this.events.push([this.t, 'ask']);
+        p.handled = p.handled || {}; for (const sh of this.shouts) p.handled[sh.id] = 1;
+      }
+      if (p.isCop && p.lockUntil && this.t >= p.lockUntil && p.tgt && p.tgt.kind === 'shout' && p.handled && p.handled[p.tgt.id]) {
+        p.tgt = { kind: 'man', id: -1 };
       }
       let ax = 0, ay = 0;
       const tp = this.tgtPos(p);

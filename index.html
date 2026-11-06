@@ -21,7 +21,7 @@
 <body>
 <div id="wrap">
   <h1>喊一声</h1>
-  <p class="sub">一个巡警牵着一个白背心站在马路当中，一圈人围着看（鲁迅《示众》）。你是街上的一个人，想让他走掉：身边的人散到两个以下、巡警又不在跟前（绳子断开），他就会自己走。</p>
+  <p class="sub">一个巡警牵着一个白背心站在马路当中，一圈人围着看（鲁迅《示众》）。你是街上的一个人。想让他走掉。</p>
   <canvas id="c" width="900" height="360"></canvas>
   <div id="bar">
     <div id="hud"></div>
@@ -30,7 +30,7 @@
   </div>
   <p class="hint">点街上一处，你就走过去。点你自己（红点）、按空格或者按"喊"：喊一声，喊一下用一口气，最多攒两口，四秒回一口。同一个人被你喊多了就不理你，过一阵会忘。</p>
 </div>
-<script src="sim.js"></script>
+<script src="sim.js?v=4"></script>
 <script>
 const cv = document.getElementById('c'), cx = cv.getContext('2d');
 const hud = document.getElementById('hud'), btn = document.getElementById('shout'), again = document.getElementById('again');
