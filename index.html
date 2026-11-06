@@ -28,7 +28,7 @@
     <button id="shout">喊</button>
     <button id="again">再来一回</button>
   </div>
-  <p class="hint">点街上一处，你就走过去。空格或者按"喊"：喊一声，最多攒两口气。</p>
+  <p class="hint">点街上一处，你就走过去。点你自己（红点）、按空格或者按"喊"：喊一声，最多攒两口气。</p>
 </div>
 <script src="sim.js"></script>
 <script>
@@ -45,7 +45,9 @@ function toWorld(e) {
   const t = e.touches ? e.touches[0] : e;
   return [(t.clientX - r.left) / r.width * W, (t.clientY - r.top) / r.height * H];
 }
-function go(e) { e.preventDefault(); const [x, y] = toWorld(e); w.you.tx = x; w.you.ty = Math.max(TOP + 6, Math.min(BOT - 6, y)); }
+function go(e) { e.preventDefault(); const [x, y] = toWorld(e);
+  if (Math.hypot(x - w.you.x, y - w.you.y) < 22) { doShout(); return; }
+  w.you.tx = x; w.you.ty = Math.max(TOP + 6, Math.min(BOT - 6, y)); }
 cv.addEventListener('mousedown', go); cv.addEventListener('touchstart', go, { passive: false });
 function doShout() { if (w.shout()) msg = ''; }
 btn.addEventListener('click', doShout);
