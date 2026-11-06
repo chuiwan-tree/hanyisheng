@@ -8,7 +8,7 @@ const P = {
   copMan: 0.8, copRange: 420, copHeardK: 0.5,
   ringR: 52, copAwayR: 95, thinNeed: 2.0, thinMax: 2,
   speed: 62, wanderSpeed: 34, manSpeed: 38, youSpeed: 120,
-  breathRegen: 0.24, copLock: 3,
+  breathRegen: 0.24, copLock: 3, forget: 20, dayLen: 180,
 };
 
 function rng(seed) {
@@ -26,7 +26,7 @@ class World {
     for (let i = 0; i < N; i++) this.ppl.push(this.newPerson(this.r() * W));
     this.nextCart = 25 + this.r() * 30;
     this.thinT = 0; this.state = 'play'; this.followers = 0; this.endT = 0; this.leaveT = 0;
-    this.ring = 0; this.events = [];
+    this.ring = 0; this.events = []; this.maxOnYou = 0; this.minRing = 99; this.endKind = '';
   }
   newPerson(x) {
     const r = this.r;
@@ -115,6 +115,7 @@ class World {
     for (const p of all) {
       p.think -= dt;
       if (p.think <= 0) { p.think = 0.4 + r() * 0.3; this.think(p, srcs); }
+      if (p.heard > 0) p.heard = Math.max(0, p.heard - dt / P.forget);
       const dm = Math.hypot(p.x - this.man.x, p.y - this.man.y);
       if (!p.isCop) {
         if (dm < P.ringR + 10 && p.tgt && p.tgt.kind === 'man') p.bMan += P.boreUp * dt;
@@ -161,6 +162,12 @@ class World {
     if (this.state !== 'play') this.ppl = this.ppl.filter(p => !(p.gone && (p.x < -40 || p.x > W + 40)) || (p.tgt && p.tgt.kind === 'man'));
     const copD = Math.hypot(this.cop.x - this.man.x, this.cop.y - this.man.y);
     if (this.state === 'play') {
+      let onYou = 0; for (const p of this.ppl) if (p.tgt && p.tgt.kind === 'shout' && Math.hypot(p.x - y.x, p.y - y.y) < 70) onYou++;
+      this.maxOnYou = Math.max(this.maxOnYou, onYou);
+      if (this.t > 4) this.minRing = Math.min(this.minRing, ring);
+      if (this.t > P.dayLen) {
+        this.state = 'end'; this.endKind = 'noon'; this.endT = this.t; this.man.dir = 1; this.events.push([this.t, 'noon']);
+      }
       if (ring <= P.thinMax && copD > P.copAwayR) this.thinT += dt; else this.thinT = 0;
       if (this.thinT >= P.thinNeed) {
         this.state = 'leaving'; this.leaveT = this.t;
@@ -172,7 +179,7 @@ class World {
       if (copD < 20 && this.t - this.leaveT > 0.5) {
         this.state = 'back'; this.events.push([this.t, 'caught']); this.thinT = 0;
       } else if (this.man.x < -30 || this.man.x > W + 30) {
-        this.state = 'end'; this.endT = this.t;
+        this.state = 'end'; this.endKind = 'gone'; this.endT = this.t;
         this.followers = this.ppl.filter(p => p.tgt && p.tgt.kind === 'man').length + (this.cop.tgt && this.cop.tgt.kind === 'man' ? 1 : 0);
         this.copFollows = !!(this.cop.tgt && this.cop.tgt.kind === 'man');
         this.events.push([this.t, 'end', this.followers]);
@@ -184,6 +191,7 @@ class World {
       this.cop.tgt = { kind: 'man', id: -1 }; this.cop.lockUntil = this.t + 0.5;
     } else if (this.state === 'end') {
       this.man.x += this.man.dir * P.manSpeed * dt;
+      if (this.endKind === 'noon') { this.cop.tgt = { kind: 'man', id: -1 }; this.cop.lockUntil = this.t + 1; }
     }
   }
 }

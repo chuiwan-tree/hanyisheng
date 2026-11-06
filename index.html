@@ -21,23 +21,23 @@
 <body>
 <div id="wrap">
   <h1>喊一声</h1>
-  <p class="sub">一个巡警牵着一个白背心站在马路当中，一圈人围着看（鲁迅《示众》）。你是街上的一个人。想让他走掉。</p>
+  <p class="sub">一个巡警牵着一个白背心站在马路当中，一圈人围着看（鲁迅《示众》）。你是街上的一个人，想让他走掉：身边的人散到两个以下、巡警又不在跟前（绳子断开），他就会自己走。</p>
   <canvas id="c" width="900" height="360"></canvas>
   <div id="bar">
     <div id="hud"></div>
     <button id="shout">喊</button>
     <button id="again">再来一回</button>
   </div>
-  <p class="hint">点街上一处，你就走过去。点你自己（红点）、按空格或者按"喊"：喊一声，最多攒两口气。</p>
+  <p class="hint">点街上一处，你就走过去。点你自己（红点）、按空格或者按"喊"：喊一声，喊一下用一口气，最多攒两口，四秒回一口。同一个人被你喊多了就不理你，过一阵会忘。</p>
 </div>
 <script src="sim.js"></script>
 <script>
 const cv = document.getElementById('c'), cx = cv.getContext('2d');
 const hud = document.getElementById('hud'), btn = document.getElementById('shout'), again = document.getElementById('again');
-let w, msg = '', msgT = 0, seenEv = 0, acc = 0, last = 0;
+let w, best = 99, msg = '', msgT = 0, seenEv = 0, acc = 0, last = 0;
 function start() {
   w = new World((Math.random() * 1e9) | 0);
-  msg = ''; msgT = 0; seenEv = 0; again.style.display = 'none'; btn.style.display = '';
+  best = 99; msg = ''; msgT = 0; seenEv = 0; again.style.display = 'none'; btn.style.display = '';
 }
 start();
 function toWorld(e) {
@@ -111,8 +111,14 @@ function draw() {
   }
   // 绳子
   const cop = w.cop;
-  if (Math.hypot(cop.x - w.man.x, cop.y - w.man.y) < 40) {
-    cx.beginPath(); cx.moveTo(cop.x, cop.y); cx.lineTo(w.man.x, w.man.y); cx.strokeStyle = '#6d5a3a'; cx.lineWidth = 1; cx.stroke();
+  const copD = Math.hypot(cop.x - w.man.x, cop.y - w.man.y);
+  if (copD < P.copAwayR && w.state !== 'end') {
+    cx.beginPath(); cx.moveTo(cop.x, cop.y); cx.lineTo(w.man.x, w.man.y);
+    cx.strokeStyle = copD > 50 ? '#9b3b2a' : '#6d5a3a'; cx.lineWidth = copD > 50 ? 1.6 : 1; cx.stroke();
+  }
+  if (w.state === 'play' && w.thinT > 0) {
+    cx.beginPath(); cx.arc(w.man.x, w.man.y, 13, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, w.thinT / P.thinNeed));
+    cx.strokeStyle = '#3f7a4a'; cx.lineWidth = 3; cx.stroke();
   }
   for (const p of w.ppl) person(p, '#80766a', '#5d544a');
   person(cop, '#2f3f63', '#1d2840', 6);
@@ -124,7 +130,15 @@ function draw() {
     cx.beginPath(); cx.arc(w.you.tx, w.you.ty, 3, 0, Math.PI * 2); cx.strokeStyle = 'rgba(180,67,47,.5)'; cx.lineWidth = 1; cx.stroke();
   }
   // 话
-  if (msg) {
+  let line = msg;
+  if (!line && w.state === 'play') {
+    const near = Math.hypot(w.cop.x - w.man.x, w.cop.y - w.man.y) < P.copAwayR;
+    if (w.ring <= P.thinMax && near) line = '人散了，可巡警还牵着他';
+    else if (!near && w.ring > P.thinMax) line = `绳子松了，可他身边还围着 ${w.ring} 个`;
+    else if (!near && w.ring <= P.thinMax) line = '他在看路……';
+  }
+  if (line) {
+    const msg = line;
     cx.fillStyle = 'rgba(58,51,43,.78)'; cx.font = '17px sans-serif'; cx.textAlign = 'center';
     cx.fillText(msg, W / 2, BOT - 12);
   }
@@ -135,13 +149,14 @@ function endCard() {
   cx.fillStyle = '#3a332b'; cx.textAlign = 'center';
   const f = w.followers, near = w.ppl.filter(p => p.tgt && p.tgt.kind === 'shout').length;
   let a, b;
-  if (f >= 20) { a = '他走了。'; b = `跟着他走的有 ${f} 个人${w.copFollows ? '，巡警也在里头' : ''}。`; }
+  if (w.endKind === 'noon') { a = '晌午了，巡警把他牵走了。'; b = `他身边最少剩过 ${w.minRing} 个人。最多的时候，有 ${w.maxOnYou} 个人围着看你。`; }
+  else if (f >= 20) { a = '他走了。'; b = `跟着他走的有 ${f} 个人${w.copFollows ? '，巡警也在里头' : ''}。`; }
   else if (f >= 6) { a = '他走了。'; b = `后面跟着 ${f} 个人。`; }
   else { a = '他走了，没几个人看见。'; b = near >= 6 ? `围着的是你，${near} 个人在看你。` : '大家看了一会儿别的，又散了。'; }
   cx.font = '24px sans-serif'; cx.fillText(a, W / 2, 140);
   cx.font = '16px sans-serif'; cx.fillText(b, W / 2, 178);
   cx.fillStyle = '#7a6f61'; cx.font = '14px sans-serif';
-  cx.fillText(`用了 ${w.leaveT.toFixed(0)} 秒，喊了 ${w.you.shouts} 声`, W / 2, 222);
+  cx.fillText(w.endKind === 'noon' ? `喊了 ${w.you.shouts} 声` : `用了 ${w.leaveT.toFixed(0)} 秒，喊了 ${w.you.shouts} 声；最多的时候有 ${w.maxOnYou} 个人看你`, W / 2, 222);
 }
 function hudText() {
   const cop = w.cop, cd = Math.hypot(cop.x - w.man.x, cop.y - w.man.y);
@@ -153,7 +168,8 @@ function hudText() {
   const br = w.you.breath, dots = (br >= 1 ? '●' : '○') + (br >= 2 - 0.01 ? '●' : '○');
   if (w.state === 'leaving') return `白背心在往外走。巡警：${cs}`;
   if (w.state === 'end') return '';
-  return `围着看的：${w.ring} 个　巡警：${cs}　气：${dots}`;
+  const left = Math.max(0, P.dayLen - w.t) | 0;
+  return `离晌午 ${Math.floor(left/60)}:${String(left%60).padStart(2,'0')}　围着他的：${w.ring} 个${w.minRing < 99 ? `（最少到过 ${w.minRing}）` : ''}　巡警：${cs}　气：${dots}`;
 }
 function frame(ts) {
   const dtR = Math.min(0.1, (ts - last) / 1000 || 0); last = ts; acc += dtR;
