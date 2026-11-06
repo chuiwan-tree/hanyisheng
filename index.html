@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>喊一声</title>
+<style>
+  html,body{margin:0;background:#f3ecdc;color:#3a332b;font-family:"PingFang SC","Hiragino Sans GB","Noto Sans CJK SC",sans-serif}
+  #wrap{max-width:920px;margin:0 auto;padding:12px 10px 20px}
+  h1{font-size:20px;margin:4px 0 2px;font-weight:600}
+  .sub{font-size:13px;color:#7a6f61;margin:0 0 10px;line-height:1.6}
+  canvas{width:100%;display:block;border-radius:6px;touch-action:none;cursor:pointer;background:#e7dcc4}
+  #bar{display:flex;align-items:center;gap:12px;margin-top:10px;font-size:14px}
+  #hud{flex:1;line-height:1.6}
+  button{font:inherit;border:0;border-radius:6px;padding:10px 22px;background:#b4432f;color:#fff;font-size:17px}
+  button:disabled{background:#c9b9a6}
+  #again{background:#5b5146;display:none}
+  .hint{font-size:12px;color:#8a7f70;margin-top:8px;line-height:1.6}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <h1>喊一声</h1>
+  <p class="sub">一个巡警牵着一个白背心站在马路当中，一圈人围着看（鲁迅《示众》）。你是街上的一个人。想让他走掉。</p>
+  <canvas id="c" width="900" height="360"></canvas>
+  <div id="bar">
+    <div id="hud"></div>
+    <button id="shout">喊</button>
+    <button id="again">再来一回</button>
+  </div>
+  <p class="hint">点街上一处，你就走过去。空格或者按"喊"：喊一声，最多攒两口气。</p>
+</div>
+<script src="sim.js"></script>
+<script>
+const cv = document.getElementById('c'), cx = cv.getContext('2d');
+const hud = document.getElementById('hud'), btn = document.getElementById('shout'), again = document.getElementById('again');
+let w, msg = '', msgT = 0, seenEv = 0, acc = 0, last = 0;
+function start() {
+  w = new World((Math.random() * 1e9) | 0);
+  msg = ''; msgT = 0; seenEv = 0; again.style.display = 'none'; btn.style.display = '';
+}
+start();
+function toWorld(e) {
+  const r = cv.getBoundingClientRect();
+  const t = e.touches ? e.touches[0] : e;
+  return [(t.clientX - r.left) / r.width * W, (t.clientY - r.top) / r.height * H];
+}
+function go(e) { e.preventDefault(); const [x, y] = toWorld(e); w.you.tx = x; w.you.ty = Math.max(TOP + 6, Math.min(BOT - 6, y)); }
+cv.addEventListener('mousedown', go); cv.addEventListener('touchstart', go, { passive: false });
+function doShout() { if (w.shout()) msg = ''; }
+btn.addEventListener('click', doShout);
+again.addEventListener('click', start);
+addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); if (w.state === 'end') start(); else doShout(); } });
+
+function say(s, t = 3) { msg = s; msgT = t; }
+function readEvents() {
+  while (seenEv < w.events.length) {
+    const e = w.events[seenEv++];
+    if (e[1] === 'cart') say('那头一辆洋车翻了');
+    if (e[1] === 'ask') say('巡警过来问你喊什么', 2.5);
+    if (e[1] === 'leave') say('白背心自己走了', 4);
+    if (e[1] === 'caught') say('巡警追上了，又牵回来了', 4);
+  }
+}
+
+function lookAt(p) {
+  // 头往哪儿伸
+  let tx = null, ty = null;
+  if (p.tgt) {
+    if (p.tgt.kind === 'man') { tx = w.man.x; ty = w.man.y; }
+    else if (p.tgt.kind === 'shout') { tx = w.you.x; ty = w.you.y; }
+    else if (p.tgt.kind === 'cart') { const c = w.carts.find(z => z.id === p.tgt.id); if (c) { tx = c.x; ty = c.y; } }
+  }
+  if (tx === null) { tx = p.x + p.vx; ty = p.y + p.vy; }
+  const dx = tx - p.x, dy = ty - p.y, d = Math.hypot(dx, dy) || 1;
+  return [dx / d, dy / d];
+}
+function dot(x, y, r, fill, stroke) {
+  cx.beginPath(); cx.arc(x, y, r, 0, Math.PI * 2); cx.fillStyle = fill; cx.fill();
+  if (stroke) { cx.strokeStyle = stroke; cx.lineWidth = 1.2; cx.stroke(); }
+}
+function person(p, body, head, r = 5) {
+  const [ux, uy] = lookAt(p);
+  dot(p.x, p.y, r, body);
+  dot(p.x + ux * (r - 0.5), p.y + uy * (r - 0.5), r * 0.5, head);
+}
+const shops = ['馒头', '茶', '当', '布', '烟', '药', '米'];
+function draw() {
+  cx.clearRect(0, 0, W, H);
+  // 两边铺子、马路
+  cx.fillStyle = '#cbbd9f'; cx.fillRect(0, 0, W, TOP - 4);
+  cx.fillStyle = '#cbbd9f'; cx.fillRect(0, BOT + 4, W, H - BOT - 4);
+  cx.fillStyle = '#e7dcc4'; cx.fillRect(0, TOP - 4, W, BOT - TOP + 8);
+  cx.fillStyle = '#8c7a60'; cx.font = '13px sans-serif'; cx.textAlign = 'center';
+  for (let i = 0; i < 7; i++) cx.fillText(shops[i], 64 + i * 128, 26);
+  // 洋车
+  for (const c of w.carts) {
+    const a = Math.exp(-(w.t - c.t0) / P.cartLife);
+    cx.save(); cx.translate(c.x, c.y); cx.rotate(0.9); cx.globalAlpha = 0.4 + 0.6 * Math.min(1, a * 2);
+    cx.fillStyle = '#7a4b2a'; cx.fillRect(-14, -6, 28, 12);
+    cx.strokeStyle = '#4a2e1a'; cx.lineWidth = 2; cx.beginPath(); cx.arc(-4, 9, 7, 0, Math.PI * 2); cx.stroke();
+    cx.restore();
+  }
+  // 喊声
+  for (const s of w.shouts) {
+    const age = w.t - s.t0; if (age > 1.2) continue;
+    cx.beginPath(); cx.arc(w.you.x, w.you.y, 8 + age * 140, 0, Math.PI * 2);
+    cx.strokeStyle = `rgba(180,67,47,${0.5 * (1 - age / 1.2)})`; cx.lineWidth = 2; cx.stroke();
+  }
+  // 绳子
+  const cop = w.cop;
+  if (Math.hypot(cop.x - w.man.x, cop.y - w.man.y) < 40) {
+    cx.beginPath(); cx.moveTo(cop.x, cop.y); cx.lineTo(w.man.x, w.man.y); cx.strokeStyle = '#6d5a3a'; cx.lineWidth = 1; cx.stroke();
+  }
+  for (const p of w.ppl) person(p, '#80766a', '#5d544a');
+  person(cop, '#2f3f63', '#1d2840', 6);
+  // 白背心
+  dot(w.man.x, w.man.y, 7, '#fbfaf6', '#5d544a');
+  // 你
+  dot(w.you.x, w.you.y, 6, '#b4432f');
+  if (Math.hypot(w.you.tx - w.you.x, w.you.ty - w.you.y) > 4) {
+    cx.beginPath(); cx.arc(w.you.tx, w.you.ty, 3, 0, Math.PI * 2); cx.strokeStyle = 'rgba(180,67,47,.5)'; cx.lineWidth = 1; cx.stroke();
+  }
+  // 话
+  if (msg) {
+    cx.fillStyle = 'rgba(58,51,43,.78)'; cx.font = '17px sans-serif'; cx.textAlign = 'center';
+    cx.fillText(msg, W / 2, BOT - 12);
+  }
+  if (w.state === 'end') endCard();
+}
+function endCard() {
+  cx.fillStyle = 'rgba(243,236,220,.86)'; cx.fillRect(170, 92, 560, 170);
+  cx.fillStyle = '#3a332b'; cx.textAlign = 'center';
+  const f = w.followers, near = w.ppl.filter(p => p.tgt && p.tgt.kind === 'shout').length;
+  let a, b;
+  if (f >= 20) { a = '他走了。'; b = `跟着他走的有 ${f} 个人${w.copFollows ? '，巡警也在里头' : ''}。`; }
+  else if (f >= 6) { a = '他走了。'; b = `后面跟着 ${f} 个人。`; }
+  else { a = '他走了，没几个人看见。'; b = near >= 6 ? `围着的是你，${near} 个人在看你。` : '大家看了一会儿别的，又散了。'; }
+  cx.font = '24px sans-serif'; cx.fillText(a, W / 2, 140);
+  cx.font = '16px sans-serif'; cx.fillText(b, W / 2, 178);
+  cx.fillStyle = '#7a6f61'; cx.font = '14px sans-serif';
+  cx.fillText(`用了 ${w.leaveT.toFixed(0)} 秒，喊了 ${w.you.shouts} 声`, W / 2, 222);
+}
+function hudText() {
+  const cop = w.cop, cd = Math.hypot(cop.x - w.man.x, cop.y - w.man.y);
+  let cs = '牵着他';
+  if (cop.lockUntil > w.t) cs = '在问你话';
+  else if (cop.tgt && cop.tgt.kind === 'cart') cs = '去看车了';
+  else if (cop.tgt && cop.tgt.kind === 'shout') cs = '朝你走过来';
+  else if (cd > 40) cs = '往回走';
+  const br = w.you.breath, dots = (br >= 1 ? '●' : '○') + (br >= 2 - 0.01 ? '●' : '○');
+  if (w.state === 'leaving') return `白背心在往外走。巡警：${cs}`;
+  if (w.state === 'end') return '';
+  return `围着看的：${w.ring} 个　巡警：${cs}　气：${dots}`;
+}
+function frame(ts) {
+  const dtR = Math.min(0.1, (ts - last) / 1000 || 0); last = ts; acc += dtR;
+  while (acc >= 1 / 30) { if (w.state !== 'end' || w.t - w.endT < 20) w.step(1 / 30); acc -= 1 / 30; }
+  if (msgT > 0) { msgT -= dtR; if (msgT <= 0) msg = ''; }
+  readEvents();
+  btn.disabled = w.you.breath < 1 || w.state === 'end';
+  if (w.state === 'end') { btn.style.display = 'none'; again.style.display = ''; }
+  hud.textContent = hudText();
+  draw();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
